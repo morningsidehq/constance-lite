@@ -4,6 +4,30 @@ class ChatWidget {
         this.createChatButton();
         this.createChatWindow();
         this.attachEventListeners();
+        this.setupRealtimeSubscription();
+    }
+
+    async setupRealtimeSubscription() {
+        const user = await this.getCurrentUser();
+        if (!user) return;
+
+        supabaseClient
+            .channel('support_messages')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'support_messages',
+                    filter: `user_id=eq.${user.id}`
+                },
+                (payload) => {
+                    if (payload.new.response && payload.new.response !== payload.old.response) {
+                        this.addMessageToChat(payload.new.response, 'system');
+                    }
+                }
+            )
+            .subscribe();
     }
 
     createChatButton() {

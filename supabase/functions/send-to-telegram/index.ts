@@ -10,7 +10,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -19,13 +18,8 @@ serve(async (req) => {
     const { message, messageId } = await req.json()
     
     console.log('Processing message:', { message, messageId })
-    console.log('Environment variables present:', {
-      hasBotToken: !!TELEGRAM_BOT_TOKEN,
-      hasChatId: !!TELEGRAM_CHAT_ID
-    })
     
     const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`
-    console.log('Sending to Telegram URL:', telegramUrl)
     
     const response = await fetch(
       telegramUrl,
@@ -38,6 +32,10 @@ serve(async (req) => {
           chat_id: TELEGRAM_CHAT_ID,
           text: `#msg${messageId}\n${message}`,
           parse_mode: 'HTML',
+          reply_markup: {
+            force_reply: true,
+            selective: true
+          }
         }),
       }
     )
