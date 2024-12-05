@@ -11,23 +11,44 @@ class ChatWidget {
         const user = await this.getCurrentUser();
         if (!user) return;
 
+        console.log('Setting up realtime subscription for user:', user.id);
+
         supabaseClient
             .channel('support_messages')
             .on(
                 'postgres_changes',
                 {
-                    event: 'UPDATE',
+                    event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
                     schema: 'public',
                     table: 'support_messages',
                     filter: `user_id=eq.${user.id}`
                 },
                 (payload) => {
-                    if (payload.new.response && payload.new.response !== payload.old.response) {
-                        this.addMessageToChat(payload.new.response, 'system');
+                    console.log('Received realtime payload:', payload);
+
+                    // Handle different event types
+                    switch (payload.eventType) {
+                        case 'INSERT':
+                            // Handle new messages
+                            if (payload.new.is_from_support) {
+                                this.addMessageToChat(payload.new.message, 'system');
+                            }
+                            break;
+                        
+                        case 'UPDATE':
+                            // Handle updates to existing messages
+                            if (payload.new.response && 
+                                (!payload.old.response || payload.new.response !== payload.old.response)) {
+                                console.log('New response received:', payload.new.response);
+                                this.addMessageToChat(payload.new.response, 'system');
+                            }
+                            break;
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                console.log('Subscription status:', status);
+            });
     }
 
     createChatButton() {
