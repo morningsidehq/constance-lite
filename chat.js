@@ -1,54 +1,51 @@
 class ChatWidget {
     constructor() {
         this.isOpen = false;
+        this.hasInitialMessage = false;
         this.createChatButton();
         this.createChatWindow();
         this.attachEventListeners();
         this.setupRealtimeSubscription();
+        this.channel = null;
     }
 
     async setupRealtimeSubscription() {
-        const user = await this.getCurrentUser();
-        if (!user) return;
+        try {
+            const { data: { user }, error } = await supabaseClient.auth.getUser();
+            if (error || !user) {
+                console.log('No authenticated user found');
+                return;
+            }
 
-        console.log('Setting up realtime subscription for user:', user.id);
+            if (this.channel) {
+                await this.channel.unsubscribe();
+            }
 
-        supabaseClient
-            .channel('support_messages')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
-                    schema: 'public',
-                    table: 'support_messages',
-                    filter: `user_id=eq.${user.id}`
-                },
-                (payload) => {
-                    console.log('Received realtime payload:', payload);
-
-                    // Handle different event types
-                    switch (payload.eventType) {
-                        case 'INSERT':
-                            // Handle new messages
-                            if (payload.new.is_from_support) {
-                                this.addMessageToChat(payload.new.message, 'system');
-                            }
-                            break;
-                        
-                        case 'UPDATE':
-                            // Handle updates to existing messages
-                            if (payload.new.response && 
-                                (!payload.old.response || payload.new.response !== payload.old.response)) {
-                                console.log('New response received:', payload.new.response);
-                                this.addMessageToChat(payload.new.response, 'system');
-                            }
-                            break;
+            this.channel = supabaseClient
+                .channel(`support_messages_${user.id}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: 'UPDATE',
+                        schema: 'public',
+                        table: 'support_messages',
+                        filter: `user_id=eq.${user.id}`
+                    },
+                    (payload) => {
+                        console.log('Received update:', payload);
+                        if (payload.new.response && 
+                            (!payload.old?.response || payload.new.response !== payload.old.response)) {
+                            this.addMessageToChat(payload.new.response, 'system');
+                        }
                     }
-                }
-            )
-            .subscribe((status) => {
-                console.log('Subscription status:', status);
-            });
+                )
+                .subscribe((status) => {
+                    console.log('Subscription status:', status);
+                });
+
+        } catch (error) {
+            console.error('Error setting up realtime subscription:', error);
+        }
     }
 
     createChatButton() {
@@ -154,7 +151,11 @@ class ChatWidget {
 
             input.value = '';
             this.addMessageToChat(message, 'user');
-            this.addMessageToChat('Thank you for your message. Our team will respond shortly.', 'system');
+
+            if (!this.hasInitialMessage) {
+                this.addMessageToChat('Thank you for your message. Our team will respond shortly.', 'system');
+                this.hasInitialMessage = true;
+            }
 
         } catch (error) {
             console.error('Error sending message:', error);
@@ -163,7 +164,10 @@ class ChatWidget {
     }
 }
 
-// Initialize chat widget when document is ready
-document.addEventListener('DOMContentLoaded', () => {
-    new ChatWidget();
+// Initialize chat widget when document is ready and user is authenticated
+document.addEventListener('DOMContentLoaded', async () => {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (user) {
+        new ChatWidget();
+    }
 }); 
